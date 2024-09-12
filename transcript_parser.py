@@ -1,7 +1,7 @@
 import pdfplumber
 import re
 
-# hardcoded mapping of majors to their associated schools
+# hardcoded mapping of majors to their associated schools, not exhaustive just temp for now
 school_mapping = {
     "Computer Science": "ecs",
     "Software Engineering": "ecs",
@@ -12,7 +12,15 @@ school_mapping = {
     "Finance": "jsom",
     "Accounting": "jsom",
     "Information Systems": "jsom",
-    "Marketing": "jsom"
+    "Marketing": "jsom",
+    "History": "ah",
+    "Philosophy": "ah",
+    "Education": "is",
+    "American Studies": "is",
+    "Biology": "nsm",
+    "Chemistry": "nsm",
+    "Biochemistry": "nsm",
+    "Physics": "nsm",
 }
 
 def extract_transcript_data(pdf_path):

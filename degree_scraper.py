@@ -41,7 +41,6 @@ def scrape_core_curriculum_section(soup, section_id):
                     course_code_formatted = re.sub(r'([A-Z]+)(\d+)', r'\1 \2', course_code.upper())  # add a space between the dpmt and num to match the transcript format
                     core_courses.append({
                         "course_info": course_code_formatted,
-                        "course_url": course_url
                     })
     return core_courses
 
