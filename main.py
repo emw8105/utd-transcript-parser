@@ -1,7 +1,7 @@
 import json
 import time
 from transcript_parser import extract_transcript_data
-from degree_scraper import construct_degree_plan_url, scrape_degree_plan
+from degree_scraper import scrape_degree_plan
 
 # Main function to load and process transcript, then fetch degree plan
 def main():
@@ -21,11 +21,15 @@ def main():
     major = transcript_data['major']
     school = transcript_data['school']
     program_start_date = transcript_data['program_start_date']
-    url = construct_degree_plan_url(major, school, program_start_date)
+
+    # function to construct the degree plan URL
+    formatted_major = major.lower().replace(" ", "-")
+    year = program_start_date.split("-")[0]
+    url = f"https://catalog.utdallas.edu/{year}/undergraduate/programs/{school}/{formatted_major}"
 
     # scrape the degree plan from the URL
     start_time = time.time()
-    core_requirements, major_requirements = scrape_degree_plan(url)
+    core_requirements, major_requirements = scrape_degree_plan(url, year)
     end_time = time.time()
     print(f"Degree plan retrieval took {round(end_time - start_time, 2)} seconds")
 
