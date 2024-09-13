@@ -1,9 +1,8 @@
 import requests
 from bs4 import BeautifulSoup
 import re
-import json
 
-# Function to scrape the prerequisite and corequisite information from a course page
+# scrapes the prerequisites and corequisites for a given course
 def scrape_course_prerequisites(code, year):
     url_code = code.replace(" ", "").lower()
     course_url = f"https://catalog.utdallas.edu/{year}/undergraduate/courses/{url_code}"
@@ -14,25 +13,18 @@ def scrape_course_prerequisites(code, year):
         response.raise_for_status()
         soup = BeautifulSoup(response.content, 'html.parser')
 
-        # The prerequisites and corequisites will be inside a paragraph that contains the word "Prerequisite"
+        # extract the section of text from the HTML that contains the course description
         description_section = soup.find("div", id="bukku-page").find("p")
-        prerequisites = []
-        corequisites = []
+        if not description_section:
+            return {"prerequisites": [], "corequisites": []}
 
-        if description_section:
-            description_text = description_section.get_text(strip=True)
+        description_text = description_section.get_text(" ", strip=True)
 
-            # Extract prerequisites after "Prerequisite:"
-            prereq_start = description_text.lower().find("prerequisite")
-            if prereq_start != -1:
-                prereq_text = description_text[prereq_start + len("prerequisite:"):].strip()
-                prerequisites = extract_course_groups(prereq_text)
+        prereq_text = extract_prerequisite_text(description_text)
+        coreq_text = extract_corequisite_text(description_text)
 
-            # Extract corequisites after "Corequisite:"
-            coreq_start = description_text.lower().find("corequisite")
-            if coreq_start != -1:
-                coreq_text = description_text[coreq_start + len("corequisite:"):].strip()
-                corequisites = extract_course_groups(coreq_text)
+        prerequisites = parse_courses_from_text(prereq_text) if prereq_text else []
+        corequisites = parse_courses_from_text(coreq_text) if coreq_text else []
 
         return {"prerequisites": prerequisites, "corequisites": corequisites}
 
@@ -40,76 +32,59 @@ def scrape_course_prerequisites(code, year):
         print(f"Error fetching course prerequisites from {course_url}: {e}")
         return {"prerequisites": [], "corequisites": []}
 
+# function to extract prerequisite text from "Prerequisite:" up to "Corequisite:" or the end of text
+def extract_prerequisite_text(text):
+    match = re.search(r"(Prerequisites?:\s*)([^\.]+)", text, re.IGNORECASE)
+    if match:
+        return match.group(2).strip()
+    return None
 
-# Helper function to extract grouped course codes for prerequisites/corequisites
-def extract_course_groups(text):
+# function to extract corequisite text from "Corequisite:" up to the first period
+def extract_corequisite_text(text):
+    match = re.search(r"(Corequisites?:\s*)([^\.]+)", text, re.IGNORECASE)
+    if match:
+        return match.group(2).strip()
+    return None
+
+# function to parse courses from the extracted req text
+def parse_courses_from_text(text):
     course_groups = []
-    course_group = []
+    current_group = []
 
-    # Regex pattern to match course codes like "MATH 2413", "PHYS 2125", etc.
+    # match course codes with regex i.e. "MATH 2413" or "PHYS 2125"
     course_pattern = re.compile(r"([A-Z]+\s+\d+)")
-    
-    # Split text into tokens by 'and' or 'or'
+
+    # split the text by "or" or "and" to separate the groups and parse the courses
+    # note that "or" indicates the same group as the courses have equivalency in determining requisite satisfaction
+    # "and" indicates a new group functioning and additional requisites
     tokens = re.split(r'(\s+or\s+|\s+and\s+)', text)
 
     for token in tokens:
         token = token.strip()
-        course_match = course_pattern.findall(token)
         
+        course_match = course_pattern.findall(token)
         if course_match:
-            # If "or" is present, group alternatives together in the same list
-            if "or" in token.lower():
-                course_group.extend(course_match)
-            else:
-                course_group.append(course_match[0])  # If "and", treat separately
+            current_group.extend(course_match)
 
-        # If we encounter "and", close the group and append
-        if "and" in token.lower() or '.' in token:
-            if course_group:
-                course_groups.append(course_group)
-                course_group = []
+        # if "and" is found, it indicates the end of a group
+        if 'and' in token.lower():
+            if current_group:
+                course_groups.append(current_group)
+                current_group = []
 
-    # Append any leftover group
-    if course_group:
-        course_groups.append(course_group)
+        # if "or" is found, continue adding to the same group
+        elif 'or' in token.lower():
+            continue
 
-    return course_groups
+    # add any remaining group leftover
+    if current_group:
+        course_groups.append(current_group)
 
+    # clean up course_groups by removing periods and trailing characters
+    cleaned_course_groups = [[course.replace(".", "") for course in group] for group in course_groups]
 
-# function to fetch and store the HTML for the core curriculum page
-def fetch_core_curriculum_page(url):
-    full_url = "https://catalog.utdallas.edu" + url
-    try:
-        response = requests.get(full_url)
-        response.raise_for_status()
-        return BeautifulSoup(response.content, 'html.parser')  # Return the soup object
-    except requests.exceptions.RequestException as e:
-        print(f"Error scraping the core curriculum page: {e}")
-        return None
+    return cleaned_course_groups
 
-# function to scrape a specific section from the core curriculum page
-def scrape_core_curriculum_section(soup, section_id, year):
-    core_courses = []
-    core_section = soup.find(id=section_id)  # section of the page to scrape can be found by using the ID found in the url fragment
-
-    if core_section:
-        # iterate until reaching the next core section (h3)
-        for sibling in core_section.find_next_siblings():
-            if sibling.name == "h3":
-                break
-
-            if sibling.name == "p" and "cat-reqi" in sibling.get("class", []):
-                # course_info = sibling.get_text(strip=True)
-                course_url = sibling.find('a', href=True)['href'] if sibling.find('a', href=True) else None
-
-                if course_url:
-                    course_code = course_url.split('/')[-1]  # extract course code from the URL
-                    course_code_formatted = re.sub(r'([A-Z]+)(\d+)', r'\1 \2', course_code.upper())  # add a space between the dpmt and num to match the transcript format
-                    core_courses.append({
-                        "course_info": course_code_formatted,
-                        **scrape_course_prerequisites(course_code_formatted, year)
-                    })
-    return core_courses
 
 # function to scrape the degree plan page
 def scrape_degree_plan(url, year):
@@ -190,8 +165,44 @@ def scrape_degree_plan(url, year):
                     break
 
         return core_requirements, major_requirements
-
+    
     except requests.exceptions.RequestException as e:
         print(f"Error fetching the degree plan: {e}")
         return None, None
 
+
+
+# function to fetch and store the HTML for the core curriculum page
+def fetch_core_curriculum_page(url):
+    full_url = "https://catalog.utdallas.edu" + url
+    try:
+        response = requests.get(full_url)
+        response.raise_for_status()
+        return BeautifulSoup(response.content, 'html.parser')  # Return the soup object
+    except requests.exceptions.RequestException as e:
+        print(f"Error scraping the core curriculum page: {e}")
+        return None
+
+# function to scrape a specific section from the core curriculum page
+def scrape_core_curriculum_section(soup, section_id, year):
+    core_courses = []
+    core_section = soup.find(id=section_id)  # section of the page to scrape can be found by using the ID found in the url fragment
+
+    if core_section:
+        # iterate until reaching the next core section (h3)
+        for sibling in core_section.find_next_siblings():
+            if sibling.name == "h3":
+                break
+
+            if sibling.name == "p" and "cat-reqi" in sibling.get("class", []):
+                # course_info = sibling.get_text(strip=True)
+                course_url = sibling.find('a', href=True)['href'] if sibling.find('a', href=True) else None
+
+                if course_url:
+                    course_code = course_url.split('/')[-1]  # extract course code from the URL
+                    course_code_formatted = re.sub(r'([A-Z]+)(\d+)', r'\1 \2', course_code.upper())  # add a space between the dpmt and num to match the transcript format
+                    core_courses.append({
+                        "course_info": course_code_formatted,
+                        **scrape_course_prerequisites(course_code_formatted, year)
+                    })
+    return core_courses

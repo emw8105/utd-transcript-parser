@@ -33,21 +33,9 @@ def main():
     end_time = time.time()
     print(f"Degree plan retrieval took {round(end_time - start_time, 2)} seconds")
 
-    # TEMP: output the scraped degree plan data to console
     if core_requirements and major_requirements:
-        # print("\nCore Curriculum Requirements:")
-        # for category, courses in core_requirements.items():
-        #     print(f"Category: {category}")
-        #     for course in courses:
-        #         print(f"  Course Info: {course['course_info']}, URL: {course['course_url']}")
 
-        # print("\nMajor Requirements:")
-        # for category, courses in major_requirements.items():
-        #     print(f"Category: {category}")
-        #     for course in courses:
-        #         print(f"  Course Info: {course['course_info']}, URL: {course['course_url']}")
-
-        # TEMP: save the degree plan to a JSON file
+        # TEMP: save the degree plan to a JSON file, in the future will probably be saved to dyanmo table entry for the student
         degree_plan_data = {
             "core_requirements": core_requirements,
             "major_requirements": major_requirements
