@@ -164,7 +164,22 @@ def scrape_degree_plan(url, year):
                 elif sibling.name == "p" and "cat-reqa" in sibling.get("class", []):
                     break
 
-        return core_requirements, major_requirements
+        # parse elective section to find required credit hours
+        elective_requirements_section = soup.find("p", text=re.compile(r"Elective Requirements"))
+        if elective_requirements_section:
+            match = re.search(r"(\d+) semester credit hours", elective_requirements_section.get_text())
+            if match:
+                elective_credits_required = int(match.group(1))
+                elective_requirements = {"required_credit_hours": elective_credits_required}
+
+        # combine into one dictionary to return
+        degree_plan_data = {
+            "core_requirements": core_requirements,
+            "major_requirements": major_requirements,
+            "elective_requirements": elective_requirements
+        }
+
+        return degree_plan_data
     
     except requests.exceptions.RequestException as e:
         print(f"Error fetching the degree plan: {e}")
