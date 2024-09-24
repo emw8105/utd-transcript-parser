@@ -136,24 +136,24 @@ class DegreePlanEvaluator:
         return True
 
 
+# can be used to test the DegreePlanEvaluator class, just run this file in isolation with the degree plan and transcript json already populated
+# degree_plan_data = json.load(open("degree_plan_data.json"))
+# transcript_data = json.load(open("transcript_data.json"))
 
-degree_plan_data = json.load(open("degree_plan_data.json"))
-transcript_data = json.load(open("transcript_data.json"))
+# # Debugging: Check the data types and structure
+# print("Degree Plan Data:", type(degree_plan_data))
+# print("Transcript Data:", type(transcript_data))
 
-# Debugging: Check the data types and structure
-print("Degree Plan Data:", type(degree_plan_data))
-print("Transcript Data:", type(transcript_data))
+# evaluator = DegreePlanEvaluator(degree_plan_data, transcript_data)
 
-evaluator = DegreePlanEvaluator(degree_plan_data, transcript_data)
+# # Calculate category completion
+# category_completion = evaluator.calculate_category_completion()
+# print("Category Completion:", category_completion)
 
-# Calculate category completion
-category_completion = evaluator.calculate_category_completion()
-print("Category Completion:", category_completion)
+# # Recommend courses for next semester
+# recommended_courses = evaluator.recommend_courses()
+# print("Recommended Courses:", recommended_courses)
 
-# Recommend courses for next semester
-recommended_courses = evaluator.recommend_courses()
-print("Recommended Courses:", recommended_courses)
-
-file = open("category_completion.json", "w")
-json.dump(category_completion, file, indent=4)
-file.close()
+# file = open("category_completion.json", "w")
+# json.dump(category_completion, file, indent=4)
+# file.close()

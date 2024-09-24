@@ -94,55 +94,71 @@ def scrape_degree_plan(url, year):
         response.raise_for_status()
         soup = BeautifulSoup(response.content, 'html.parser')
 
-        # start with the core curriculum section
         core_curriculum_section = soup.find("p", id="degree-requirements")
         core_requirements = {}
+        major_requirements = {}
+        elective_requirements = {}
 
-        core_curriculum_soup = None  # stores the fetched html for the core curriculum page, fetched only once
+        core_curriculum_soup = None
+
+        # this list will be used to store the courses that are part of the 090 Component Area Option
+        # the courses listed under the category on the site are not all that apply, any course with an asterisk next to it
+        # and the link to this section also should be counted as part of the 090 Component Area Option
+        component_area_courses = []
 
         if core_curriculum_section:
             current_category = ""
             for sibling in core_curriculum_section.find_next_siblings():
+                # Category title
                 if sibling.name == "p" and "cat-reqg" in sibling.get("class", []):
                     current_category = sibling.get_text(strip=True)
                     core_requirements[current_category] = []
+
+                # Course information or link to core curriculum page
                 elif sibling.name == "p" and "cat-reqi" in sibling.get("class", []):
                     course_info = sibling.get_text(strip=True)
                     course_url = sibling.find("a", href=True)['href'] if sibling.find("a", href=True) else None
 
-                    # if the url links to the core curriculum page, fetch the courses from there instead of adding it as a course
+                    # If the URL links to the core curriculum page, fetch courses from there
                     if course_url and "/undergraduate/curriculum/core-curriculum" in course_url:
-                        section_id = course_url.split("#")[1]  # determine the section of the page to scrape using the fragment in the URL
+                        section_id = course_url.split("#")[1]
 
-                        # reuse the html if already fetched
+                        # Fetch the core curriculum page if it hasn't been fetched yet
                         if core_curriculum_soup is None:
                             core_curriculum_soup = fetch_core_curriculum_page(course_url)
 
-                        # add courses from the core curriculum page if available
+                        # Scrape the specific section of the core curriculum page
                         if core_curriculum_soup:
-                            core_courses = scrape_core_curriculum_section(core_curriculum_soup, section_id, year)
+                            core_courses = scrape_core_curriculum_section(core_curriculum_soup, section_id, year, component_area_courses)
 
-                            # add the core courses if they werent already added from the degree plan page
+                            # Add the core courses to the current category and handle the 090 Component Area Option
                             for course in core_courses:
                                 if course not in core_requirements[current_category]:
                                     core_requirements[current_category].append(course)
+
                     else:
-                        # direct course, append the parsed course, prevent duplicates
+                        # Direct course info, append the parsed course
                         course_code_match = re.match(r"([A-Z]+\s+\d+)", course_info)
                         code = course_code_match.group(1) if course_code_match else None
-                        if course_code_match:
+                        if code:
                             course_entry = {
                                 "course_info": code,
                                 **scrape_course_prerequisites(code, year)
                             }
                             if course_entry not in core_requirements[current_category]:
                                 core_requirements[current_category].append(course_entry)
+
+                # Break on reaching the next section
                 elif sibling.name == "p" and "cat-reqa" in sibling.get("class", []):
                     break
+        
+        # append collected courses to the Component Area Option aka Core 090
+        component_area_key = next((key for key in core_requirements if "Component Area Option" in key), None)
+        if component_area_key:
+            core_requirements[component_area_key].extend(component_area_courses)
 
         # extract the major specific requirements, no external fetching needed for this section
         major_requirements_section = soup.find("p", text="II. Major Requirements: 72 semester credit hours")
-        major_requirements = {}
 
         if major_requirements_section:
             for sibling in major_requirements_section.find_next_siblings():
@@ -172,14 +188,12 @@ def scrape_degree_plan(url, year):
                 elective_credits_required = int(match.group(1))
                 elective_requirements = {"required_credit_hours": elective_credits_required}
 
-        # combine into one dictionary to return
-        degree_plan_data = {
+        # combine into one dictionary to represent the whole degree plan to return
+        return {
             "core_requirements": core_requirements,
             "major_requirements": major_requirements,
             "elective_requirements": elective_requirements
         }
-
-        return degree_plan_data
     
     except requests.exceptions.RequestException as e:
         print(f"Error fetching the degree plan: {e}")
@@ -199,25 +213,33 @@ def fetch_core_curriculum_page(url):
         return None
 
 # function to scrape a specific section from the core curriculum page
-def scrape_core_curriculum_section(soup, section_id, year):
+def scrape_core_curriculum_section(soup, section_id, year, component_area_courses):
     core_courses = []
-    core_section = soup.find(id=section_id)  # section of the page to scrape can be found by using the ID found in the url fragment
+    core_section = soup.find(id=section_id)
 
     if core_section:
-        # iterate until reaching the next core section (h3)
         for sibling in core_section.find_next_siblings():
             if sibling.name == "h3":
                 break
 
             if sibling.name == "p" and "cat-reqi" in sibling.get("class", []):
-                # course_info = sibling.get_text(strip=True)
                 course_url = sibling.find('a', href=True)['href'] if sibling.find('a', href=True) else None
 
                 if course_url:
-                    course_code = course_url.split('/')[-1]  # extract course code from the URL
-                    course_code_formatted = re.sub(r'([A-Z]+)(\d+)', r'\1 \2', course_code.upper())  # add a space between the dpmt and num to match the transcript format
+                    course_code = course_url.split('/')[-1]
+                    course_code_formatted = re.sub(r'([A-Z]+)(\d+)', r'\1 \2', course_code.upper())
+
+                    # Detect asterisk for Component Area Option (090)
+                    asterisk = sibling.find('a', href=True, text="*")
+                    if asterisk and "090-component-area" in asterisk.get("href"):
+                        component_area_courses.append({
+                            "course_info": course_code_formatted,
+                            **scrape_course_prerequisites(course_code_formatted, year)
+                        })
+                    
                     core_courses.append({
                         "course_info": course_code_formatted,
                         **scrape_course_prerequisites(course_code_formatted, year)
                     })
+
     return core_courses
