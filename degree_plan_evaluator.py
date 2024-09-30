@@ -4,6 +4,7 @@ import re
 class DegreePlanEvaluator:
     def __init__(self, degree_plan, transcript):
         self.completed_courses = set()
+        self.core_courses = set() # tracks core curriculum courses that overlap with major requirements (i.e. "beyond core curriculum")
 
         # collect all completed courses from transcript from each section
         if 'courses' in transcript:
@@ -24,24 +25,43 @@ class DegreePlanEvaluator:
         """Build a graph where nodes are courses, and edges represent prerequisites and corequisites."""
         course_graph = {}
 
-        for section in ['core_requirements', 'major_requirements']:
-            requirements = degree_plan.get(section, {})
+        # handle core requirements to build the core course list
+        core_requirements = degree_plan.get('core_requirements', {})
+        if isinstance(core_requirements, dict):
+            core_requirements = list(core_requirements.values())
 
-            if isinstance(requirements, dict):
-                requirements = list(requirements.values())
+        for category in core_requirements:
+            if isinstance(category, list):
+                for course in category:
+                    if isinstance(course, dict):
+                        course_code = course.get('course_info', '')
+                        prereqs = course.get('prerequisites', [])
+                        coreqs = course.get('corequisites', [])
+                        course_graph[course_code] = {
+                            'prerequisites': prereqs,
+                            'corequisites': coreqs
+                        }
+                        self.core_courses.add(course_code)  # add core courses for comparison later
 
-            for category in requirements:
-                if isinstance(category, list):
-                    for course in category:
-                        if isinstance(course, dict):
-                            course_code = course.get('course_info', '')
-                            prereqs = course.get('prerequisites', [])
-                            coreqs = course.get('corequisites', [])
-                            course_graph[course_code] = {
-                                'prerequisites': prereqs,
-                                'corequisites': coreqs
-                            }
+        # handle major requirements to build the full course graph
+        major_requirements = degree_plan.get('major_requirements', {})
+        if isinstance(major_requirements, dict):
+            major_requirements = list(major_requirements.values())
+
+        for category in major_requirements:
+            if isinstance(category, list):
+                for course in category:
+                    if isinstance(course, dict):
+                        course_code = course.get('course_info', '')
+                        prereqs = course.get('prerequisites', [])
+                        coreqs = course.get('corequisites', [])
+                        course_graph[course_code] = {
+                            'prerequisites': prereqs,
+                            'corequisites': coreqs
+                        }
+        
         return course_graph
+
 
     def calculate_category_completion(self):
         category_completion = {}
@@ -51,7 +71,14 @@ class DegreePlanEvaluator:
                 if isinstance(courses, list):
                     total_required = self.get_category_credit_hours(category_name, courses)
                     completed_credits, completed_courses = self.get_completed_credit_hours_and_courses(courses)
-                    remaining = max(0, total_required - completed_credits) # Ensure remaining credits are non-negative
+
+                    # exclude core courses from contributing to "beyond core" credit totals for major requirements
+                    if section == 'major_requirements' and "beyond Core Curriculum" in category_name:
+                        # subtract core curriculum credits from total
+                        core_only_credits = self.exclude_core_courses(completed_courses)
+                        completed_credits -= core_only_credits
+
+                    remaining = max(0, total_required - completed_credits)
 
                     category_completion[category_name] = {
                         'total_required': total_required,
@@ -61,6 +88,16 @@ class DegreePlanEvaluator:
                     }
 
         return category_completion
+    
+    def exclude_core_courses(self, completed_courses):
+        """Exclude courses that count towards both core and major requirements from the major's total credits."""
+        core_credit_total = 0
+
+        for course in completed_courses:
+            if course in self.core_courses:  # if the course is a core course, exclude its credit hours
+                core_credit_total += self.get_course_credit_hours(course)
+
+        return core_credit_total
 
     def get_completed_credit_hours_and_courses(self, courses):
         """Calculates the completed credit hours and returns a list of completed courses."""
@@ -130,10 +167,6 @@ class DegreePlanEvaluator:
 # can be used to test the DegreePlanEvaluator class, just run this file in isolation with the degree plan and transcript json already populated
 degree_plan_data = json.load(open("degree_plan_data.json"))
 transcript_data = json.load(open("transcript_data.json"))
-
-# Debugging: Check the data types and structure
-print("Degree Plan Data:", type(degree_plan_data))
-print("Transcript Data:", type(transcript_data))
 
 evaluator = DegreePlanEvaluator(degree_plan_data, transcript_data)
 
